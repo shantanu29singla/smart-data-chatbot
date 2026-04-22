@@ -1,7 +1,18 @@
 # 💬 Smart Data Chatbot (Natural Language → SQL)
 
+A Streamlit-based chatbot that converts natural language queries into SQL and displays results with visualization.
+
+---
+
 ## 📌 Overview
 This project allows users to query data using simple English instead of writing SQL queries.
+
+Users can ask questions like:
+- "Top 5 states by sales"
+- "Sales of binder in Florida"
+- "Total sales"
+
+The system converts these queries into SQL and retrieves results from a database.
 
 ---
 
@@ -22,6 +33,7 @@ This project allows users to query data using simple English instead of writing 
 - Data aggregation (SUM, AVG, MIN, MAX, COUNT)  
 - Filtering (State, City, Category, Product)  
 - Multi-condition queries  
+- Product-based queries  
 - Data visualization (charts)  
 - Query suggestion dropdown  
 
@@ -36,18 +48,21 @@ This project allows users to query data using simple English instead of writing 
 
 ---
 
+## 📂 Dataset
+
+Superstore Sales dataset stored in `sales.db`.
+
+---
+
 ## 🖥️ How to Run
 
-Install dependencies:
-
+1. Install dependencies  
 pip install streamlit pandas  
 
-Run the app:
-
+2. Run the app  
 streamlit run app.py  
 
-Open in browser:
-
+3. Open in browser  
 http://localhost:8501  
 
 ---
@@ -65,7 +80,7 @@ http://localhost:8501
 
 ## ⚠️ Limitations
 
-- Rule-based system  
+- Rule-based system (not AI-based)  
 - Limited understanding of complex queries  
 
 ---
