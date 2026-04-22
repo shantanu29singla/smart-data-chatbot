@@ -1,86 +1,83 @@
-# smart-data-chatbot
-Chatbot that converts English queries into SQL
-# 💬 Smart Data Chatbot (SQL + NLP)
+# 💬 Smart Data Chatbot (Natural Language → SQL)
 
-## 📌 Project Overview
-This project is a **Natural Language to SQL chatbot** that allows users to query a dataset using simple English sentences.
-
-Instead of writing SQL queries manually, users can ask questions like:
-- "top 5 states by sales"
-- "sales of binder in Florida"
-- "total sales"
-
-The system converts these queries into SQL and fetches results from a database.
+## 📌 Overview
+This project allows users to query data using simple English instead of SQL.
 
 ---
 
-## ⚙️ Technologies Used
-- Python
-- Streamlit (UI)
-- SQLite (Database)
-- Pandas (Data Handling)
-- Regex (Query Parsing)
+## 📸 Preview
+
+### Query Suggestions Dropdown
+![Dropdown](screenshot1.png)
+
+### Query Result Example
+![Result](screenshot2.png)
 
 ---
 
-## 📂 Dataset Used
-- Superstore Sales Dataset (CSV)
-- Columns include:
-  - Order Date
-  - Customer Name
-  - Region
-  - State
-  - Category
-  - Product Name
-  - Sales
+## 🚀 Features
+
+- Natural language queries  
+- Automatic SQL generation  
+- Data aggregation (SUM, AVG, MIN, MAX, COUNT)  
+- Filtering (State, City, Category, Product)  
+- Multi-condition queries  
+- Data visualization  
+- Query suggestion dropdown  
 
 ---
 
-## 🧠 Features
+## 🧰 Technologies Used
 
-### ✅ Natural Language Queries
-Users can type queries in English instead of SQL.
-
-### ✅ SQL Generation
-The system converts user input into SQL queries automatically.
-
-### ✅ Dynamic Filtering
-Supports:
-- State
-- City
-- Region
-- Category
-- Product
-
-### ✅ Aggregations
-- SUM
-- AVG
-- MAX
-- MIN
-- COUNT
-
-### ✅ Top / Bottom Analysis
-- Top N results
-- Bottom N results
-
-### ✅ Product Search
-Example:
-> "sales of binder in Florida"
-
-### ✅ Multi-Condition Queries
-Example:
-> "sales in Texas and California"
-
-### ✅ Data Visualization
-- Bar charts generated automatically
-
-### ✅ Dropdown Suggestions
-- Predefined queries for quick access
+- Python  
+- Streamlit  
+- SQLite  
+- Pandas  
 
 ---
 
 ## 🖥️ How to Run
 
-1. Install dependencies:
-```bash
+Install dependencies:
+
 pip install streamlit pandas
+
+Run the app:
+
+streamlit run app.py
+
+Open in browser:
+
+http://localhost:8501
+
+---
+
+## 🧪 Example Queries
+
+- total sales  
+- top 5 states by sales  
+- bottom 3 cities by sales  
+- sales in Florida  
+- sales of binder in Florida  
+- sales in Texas and New York  
+
+---
+
+## ⚠️ Limitations
+
+- Rule-based system  
+- Limited understanding of complex queries  
+
+---
+
+## 🔮 Future Improvements
+
+- Add AI  
+- Improve UI  
+- Handle typos  
+
+---
+
+## 👨‍💻 Author
+
+Shantanu Singla
