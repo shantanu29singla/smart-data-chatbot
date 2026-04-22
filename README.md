@@ -1,7 +1,7 @@
 # 💬 Smart Data Chatbot (Natural Language → SQL)
 
 ## 📌 Overview
-This project allows users to query data using simple English instead of SQL.
+This project allows users to query data using simple English instead of writing SQL queries.
 
 ---
 
@@ -22,7 +22,7 @@ This project allows users to query data using simple English instead of SQL.
 - Data aggregation (SUM, AVG, MIN, MAX, COUNT)  
 - Filtering (State, City, Category, Product)  
 - Multi-condition queries  
-- Data visualization  
+- Data visualization (charts)  
 - Query suggestion dropdown  
 
 ---
@@ -40,15 +40,15 @@ This project allows users to query data using simple English instead of SQL.
 
 Install dependencies:
 
-pip install streamlit pandas
+pip install streamlit pandas  
 
 Run the app:
 
-streamlit run app.py
+streamlit run app.py  
 
 Open in browser:
 
-http://localhost:8501
+http://localhost:8501  
 
 ---
 
@@ -72,7 +72,7 @@ http://localhost:8501
 
 ## 🔮 Future Improvements
 
-- Add AI  
+- Add AI integration  
 - Improve UI  
 - Handle typos  
 
