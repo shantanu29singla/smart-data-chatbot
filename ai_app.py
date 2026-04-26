@@ -136,7 +136,7 @@ hr { border-color: #1a1a1a !important; }
 def get_client():
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
-        st.error("⚠️ GROQ_API_KEY not found. Add it to your .env file.")
+        st.error("GROQ_API_KEY not found. Add it to your .env file.")
         st.stop()
     return OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
 
@@ -148,7 +148,7 @@ def get_connection():
 client = get_client()
 conn   = get_connection()
 
-# ── LOAD UNIQUE VALUES FOR SMART MATCHING ─────────────────────
+# ── LOAD UNIQUE VALUES ────────────────────────────────────────
 @st.cache_data
 def get_unique_values(column):
     query = f"SELECT DISTINCT {column} FROM sales_data"
@@ -169,71 +169,199 @@ st.markdown("""
 # ── SAMPLE QUERIES ────────────────────────────────────────────
 suggestions = [
     "",
+    # ── Simple aggregations ──
     "total sales",
-    "top 5 states by sales",
-    "bottom 3 cities by sales",
-    "sales in Florida",
-    "sales in California in 2017",
-    "sales of binder in Florida",
-    "sales by category",
     "count of customers",
-    "top 10 products by sales",
+    # ── Group by ──
+    "sales by category",
+    "sales by region",
+    "sales by sub-category",
+    "sales by segment",
+    "average discount by region",
+    "total profit by category",
+    # ── Top / Bottom ──
+    "top 5 states by sales",
+    "top 10 products by profit",
+    "top 5 customers by sales",
+    "bottom 3 cities by sales",
+    # ── Location filters ──
+    "sales in Florida",
+    "sales in California",
     "sales in Texas and New York",
-    "average profit by region",
+    # ── Product search ──
+    "sales of binder in Florida",
+    "sales of chair by region",
+    # ── Date filters ──
+    "sales in California in 2017",
+    "total sales in 2016",
+    "number of orders by month and year",
+    "number of orders by month in 2017",
+    "sales by year",
+    # ── Threshold ──
+    "sales greater than 500",
+    "profit greater than 100",
 ]
 
 selected   = st.selectbox("💡 Sample queries", suggestions, help="Pick one or type your own below")
-user_input = st.text_input("Ask anything about the data", value=selected, placeholder="e.g. sales of binder in Florida")
+user_input = st.text_input("Ask anything about the data", value=selected, placeholder="e.g. number of orders by month and year")
 
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
     run = st.button("⚡ Run Query", use_container_width=True)
 
-# ── NORMALIZE INPUT ───────────────────────────────────────────
+# ── CLEAN SQL ─────────────────────────────────────────────────
+def clean_sql(raw: str) -> str:
+    raw = re.sub(r"```(?:sql)?", "", raw, flags=re.IGNORECASE).strip()
+    raw = raw.strip("`").strip()
+    raw = raw.split(";")[0].strip() + ";"
+    return raw
+
+# ── AI SQL (PRIMARY) ──────────────────────────────────────────
+def ai_sql(query: str):
+    system_prompt = (
+        "You are a precise SQL expert working with a retail sales database.\n\n"
+        "Table: sales_data\n"
+        "Columns: row_id, order_id, order_date, ship_date, ship_mode, customer_id, customer_name,\n"
+        "         segment, country, city, state, postal_code, region, product_id, category,\n"
+        "         sub_category, product_name, sales, quantity, discount, profit\n\n"
+        "CRITICAL: order_date is stored as MM-DD-YYYY string format (e.g. 08-11-2017)\n"
+        "So to extract dates you MUST use substr():\n"
+        "  - Extract day:  substr(order_date, 4, 2)\n"
+        "  - Extract month: substr(order_date, 4, 2)\n"
+        "  - Extract year:   substr(order_date, 7, 4)\n"
+        "  - NEVER use strftime() as it will not work with this date format\n\n"
+        "Date examples:\n"
+        "  - Filter by year 2017: WHERE substr(order_date, 7, 4) = '2017'\n"
+        "  - Group by year: GROUP BY substr(order_date, 7, 4)\n"
+        "  - Group by month and year: GROUP BY substr(order_date, 7, 4), substr(order_date, 4, 2)\n"
+        "    with SELECT substr(order_date, 7, 4) AS year, substr(order_date, 4, 2) AS month\n"
+        "  - NEVER add year WHERE filter unless user mentions a specific year\n\n"
+        "STRICT Rules:\n"
+        "- Return ONLY the raw SQL query, no explanation, no markdown, no backticks\n"
+        "- Use exact column names (all lowercase with underscores)\n"
+        "- Use ROUND(value, 2) for sales, profit, discount\n"
+        "- Always end with semicolon\n\n"
+        "Counting:\n"
+        "- Count orders: COUNT(DISTINCT order_id) AS order_count\n"
+        "- Count customers: COUNT(DISTINCT customer_id) AS customer_count\n\n"
+        "Filtering:\n"
+        "- Products: product_name LIKE '%keyword%'\n"
+        "- Value threshold: WHERE sales > 500\n"
+        "- Multiple states: WHERE state IN ('California', 'Texas')\n\n"
+        "For time-based trends ORDER BY year ASC, month ASC.\n"
+        "For all other queries ORDER BY the main metric DESC."
+    )
+    try:
+        response = client.chat.completions.create(
+            model="llama3-70b-8192",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user",   "content": query}
+            ],
+            temperature=0.1,
+            max_tokens=400,
+        )
+        raw = response.choices[0].message.content.strip()
+        cleaned = clean_sql(raw)
+        if "SELECT" not in cleaned.upper():
+            return None
+        return cleaned
+    except Exception:
+        return None
+
+# ── NORMALIZE ─────────────────────────────────────────────────
 def normalize(text):
     text = text.lower()
-    text = text.replace("states", "state")
-    text = text.replace("cities", "city")
-    text = text.replace("revenue", "sales")
-    text = text.replace("orders", "order")
+    text = text.replace("states",      "state")
+    text = text.replace("cities",      "city")
+    text = text.replace("revenue",     "sales")
+    text = text.replace("orders",      "order")
+    text = text.replace("sub-category","sub_category")
+    text = text.replace("subcategory", "sub_category")
+    text = text.replace("number of order", "order count")
+    text = text.replace("how many order",  "order count")
     return text
 
-# ── RULE-BASED SQL ────────────────────────────────────────────
+# ── RULE-BASED FALLBACK ───────────────────────────────────────
 def rule_based_sql(user_input: str):
     q = normalize(user_input)
 
-    if "sales" not in q and "customer" not in q and "profit" not in q and "order" not in q:
+    has_intent = any(k in q for k in [
+        "sales", "customer", "profit", "order", "discount",
+        "quantity", "revenue", "count", "total", "average", "avg"
+    ])
+    if not has_intent:
         return None
 
-    # METRIC
-    if "customer" in q:
-        agg = "COUNT(DISTINCT customer_id)"
-        agg_label = "customer_count"
+    # ── METRIC ──
+    if "order count" in q or ("count" in q and "order" in q):
+        agg, agg_label = "COUNT(DISTINCT order_id)", "order_count"
+    elif "count" in q and "customer" in q:
+        agg, agg_label = "COUNT(DISTINCT customer_id)", "customer_count"
+    elif "average" in q or "avg" in q:
+        if "discount" in q:
+            agg, agg_label = "ROUND(AVG(discount), 4)", "avg_discount"
+        elif "profit" in q:
+            agg, agg_label = "ROUND(AVG(profit), 2)", "avg_profit"
+        elif "quantity" in q:
+            agg, agg_label = "ROUND(AVG(quantity), 2)", "avg_quantity"
+        else:
+            agg, agg_label = "ROUND(AVG(sales), 2)", "avg_sales"
     elif "profit" in q:
-        agg = "ROUND(SUM(profit), 2)"
-        agg_label = "total_profit"
+        agg, agg_label = "ROUND(SUM(profit), 2)", "total_profit"
+    elif "quantity" in q:
+        agg, agg_label = "SUM(quantity)", "total_quantity"
+    elif "discount" in q:
+        agg, agg_label = "ROUND(AVG(discount), 4)", "avg_discount"
     else:
-        agg = "ROUND(SUM(sales), 2)"
-        agg_label = "total_sales"
+        agg, agg_label = "ROUND(SUM(sales), 2)", "total_sales"
 
-    # GROUP BY
-    group_by = None
-    if "by state" in q:
-        group_by = "state"
+    # ── GROUP BY ──
+    # NOTE: date format is MM-DD-YYYY so we use substr()
+    group_by     = None
+    group_label  = None
+    extra_select = ""
+
+    if ("month" in q and "year" in q) or "month and year" in q:
+        group_by     = "substr(order_date, 7, 4), substr(order_date, 4, 2)"
+        group_label  = "month_year"
+        extra_select = "substr(order_date, 7, 4) AS year, substr(order_date, 4, 2) AS month, "
+    elif "by year" in q or "each year" in q or "yearly" in q:
+        group_by     = "substr(order_date, 7, 4)"
+        group_label  = "year"
+        extra_select = "substr(order_date, 7, 4) AS year, "
+    elif "by month" in q or "each month" in q or "monthly" in q:
+        group_by     = "substr(order_date, 4, 2)"
+        group_label  = "month"
+        extra_select = "substr(order_date, 4, 2) AS month, "
+    elif "by state" in q:
+        group_by, group_label = "state", "state"
     elif "by city" in q:
-        group_by = "city"
+        group_by, group_label = "city", "city"
+    elif "by sub_category" in q or "by sub" in q:
+        group_by, group_label = "sub_category", "sub_category"
     elif "by category" in q:
-        group_by = "category"
+        group_by, group_label = "category", "category"
     elif "by region" in q:
-        group_by = "region"
-    elif "by sub" in q:
-        group_by = "sub_category"
+        group_by, group_label = "region", "region"
+    elif "by segment" in q:
+        group_by, group_label = "segment", "segment"
+    elif "by ship" in q:
+        group_by, group_label = "ship_mode", "ship_mode"
     elif "by product" in q:
-        group_by = "product_name"
+        group_by, group_label = "product_name", "product_name"
+    elif "by customer" in q:
+        group_by, group_label = "customer_name", "customer_name"
 
-    select_part = f"{group_by}, {agg} AS {agg_label}" if group_by else f"{agg} AS {agg_label}"
+    if group_by:
+        if extra_select:
+            select_part = f"{extra_select}{agg} AS {agg_label}"
+        else:
+            select_part = f"{group_by}, {agg} AS {agg_label}"
+    else:
+        select_part = f"{agg} AS {agg_label}"
 
-    # TOP / BOTTOM
+    # ── TOP / BOTTOM ──
     order_by = ""
     limit    = ""
     match = re.search(r"(top|bottom)\s*(\d+)", q)
@@ -242,14 +370,34 @@ def rule_based_sql(user_input: str):
         n         = match.group(2)
         limit     = f" LIMIT {n}"
         order_by  = f" ORDER BY {agg} {'DESC' if direction == 'top' else 'ASC'}"
+    elif group_by:
+        if group_label in ["month_year", "year", "month"]:
+            order_by = " ORDER BY year ASC, month ASC" if group_label == "month_year" else f" ORDER BY {group_label} ASC"
+        else:
+            order_by = f" ORDER BY {agg} DESC"
 
-    # CONDITIONS
+    # ── CONDITIONS ──
     conditions = []
 
-    # Year filter
-    year_match = re.search(r"\b(201[4-9]|202[0-9])\b", q)
-    if year_match:
-        conditions.append(f"strftime('%Y', order_date) = '{year_match.group(1)}'")
+    # Year filter — only when specific year mentioned AND not grouping by year/month
+    if group_label not in ["year", "month", "month_year"]:
+        year_match = re.search(r"\b(201[4-9]|202[0-9])\b", q)
+        if year_match:
+            conditions.append(f"substr(order_date, 7, 4) = '{year_match.group(1)}'")
+    else:
+        # If grouping by year/month but a specific year is mentioned, filter to that year
+        year_match = re.search(r"\b(201[4-9]|202[0-9])\b", q)
+        if year_match and group_label == "month":
+            conditions.append(f"substr(order_date, 7, 4) = '{year_match.group(1)}'")
+
+    # Value threshold
+    thresh = re.search(r"(greater than|more than|above|over|less than|below|under)\s+(\d+(?:\.\d+)?)", q)
+    if thresh:
+        direction = thresh.group(1)
+        value     = thresh.group(2)
+        col       = "profit" if "profit" in q else "sales"
+        op        = ">" if direction in ["greater than", "more than", "above", "over"] else "<"
+        conditions.append(f"{col} {op} {value}")
 
     # State filter
     matched_states = [s for s in states if s in q]
@@ -275,7 +423,11 @@ def rule_based_sql(user_input: str):
         "total", "count", "top", "bottom", "show", "what", "give",
         "profit", "order", "customer", "average", "find", "list",
         "the", "and", "for", "from", "with", "that", "this", "in",
-        "by", "of", "is", "are", "where", "how", "many"
+        "by", "of", "is", "are", "where", "how", "many", "month",
+        "year", "greater", "than", "more", "above", "over", "less",
+        "below", "under", "number", "discount", "quantity", "avg",
+        "sub_category", "segment", "ship", "mode", "between", "per",
+        "which", "each", "every", "across", "monthly", "yearly", "give"
     }
     words = q.split()
     product_keywords = [
@@ -285,12 +437,13 @@ def rule_based_sql(user_input: str):
         and not re.match(r"201[4-9]|202[0-9]", w)
         and w not in [s.lower() for s in matched_states]
         and w not in [c.lower() for c in matched_cities]
+        and w not in [c.lower() for c in matched_cats]
     ]
     if product_keywords:
         product_conditions = [f"product_name LIKE '%{w}%'" for w in product_keywords]
         conditions.append("(" + " OR ".join(product_conditions) + ")")
 
-    # BUILD FINAL QUERY
+    # ── BUILD QUERY ──
     sql = f"SELECT {select_part} FROM sales_data"
     if conditions:
         sql += " WHERE " + " AND ".join(conditions)
@@ -300,45 +453,39 @@ def rule_based_sql(user_input: str):
 
     return sql
 
-# ── CLEAN AI SQL ──────────────────────────────────────────────
-def clean_sql(raw: str) -> str:
-    raw = re.sub(r"```(?:sql)?", "", raw, flags=re.IGNORECASE).strip()
-    raw = raw.strip("`").strip()
-    raw = raw.split(";")[0].strip() + ";"
-    return raw
+# ── DISPLAY RESULTS ───────────────────────────────────────────
+def display_results(sql_query, source):
+    badge_class = "badge-ai" if source == "ai" else "badge-rule"
+    badge_label = "✦ AI · Groq" if source == "ai" else "⚙ Rule-Based"
+    st.markdown(f'<span class="badge {badge_class}">{badge_label}</span>', unsafe_allow_html=True)
 
-# ── AI FALLBACK (Groq) ────────────────────────────────────────
-def ai_sql(query: str):
-    system_prompt = """You are a precise SQL expert. Convert the user's English question into a single SQL query.
+    with st.expander("VIEW GENERATED SQL"):
+        st.code(sql_query, language="sql")
 
-Table: sales_data
-Columns: row_id, order_id, order_date, ship_date, ship_mode, customer_id, customer_name,
-         segment, country, city, state, postal_code, region, product_id, category,
-         sub_category, product_name, sales, quantity, discount, profit
+    result = pd.read_sql(sql_query, conn)
 
-Rules:
-- Return ONLY the raw SQL query — no explanation, no markdown, no backticks
-- Use exact column names listed above (all lowercase with underscores)
-- Use ROUND(value, 2) for sales and profit columns
-- End with a semicolon
-- For year filtering use: strftime('%Y', order_date) = '2017'
-- For product search use: product_name LIKE '%keyword%'
-"""
-    try:
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user",   "content": query}
-            ],
-            temperature=0.1,
-            max_tokens=300,
+    if result.empty:
+        st.warning("No data found for that query.")
+        return
+
+    st.markdown(
+        f'<div class="result-meta">{len(result)} ROW{"S" if len(result) != 1 else ""} RETURNED</div>',
+        unsafe_allow_html=True
+    )
+    st.dataframe(result, use_container_width=True, hide_index=True)
+
+    # Show bar chart when it makes sense
+    if (
+        len(result.columns) == 2
+        and pd.api.types.is_numeric_dtype(result.iloc[:, 1])
+        and len(result) > 1
+    ):
+        st.markdown("---")
+        st.bar_chart(
+            result.set_index(result.columns[0]),
+            color="#00ff9d",
+            use_container_width=True
         )
-        raw = response.choices[0].message.content.strip()
-        return clean_sql(raw)
-    except Exception as e:
-        st.error(f"AI Error: {e}")
-        return None
 
 # ── MAIN LOGIC ────────────────────────────────────────────────
 if run:
@@ -346,47 +493,33 @@ if run:
         st.warning("Please enter a question first.")
     else:
         with st.spinner("Thinking..."):
-            sql_query = rule_based_sql(user_input)
-            source    = "rule-based"
+            # AI FIRST
+            sql_query = ai_sql(user_input)
+            source    = "ai"
 
+            # RULE-BASED FALLBACK if AI returns nothing
             if sql_query is None:
-                sql_query = ai_sql(user_input)
-                source    = "ai"
+                sql_query = rule_based_sql(user_input)
+                source    = "rule-based"
 
-        if sql_query:
-            badge_class = "badge-rule" if source == "rule-based" else "badge-ai"
-            badge_label = "⚙ Rule-Based" if source == "rule-based" else "✦ AI · Groq"
-            st.markdown(f'<span class="badge {badge_class}">{badge_label}</span>', unsafe_allow_html=True)
-
-            with st.expander("VIEW GENERATED SQL"):
-                st.code(sql_query, language="sql")
-
+        if sql_query is None:
+            st.error("Could not understand that query. Try rephrasing it.")
+        else:
             try:
-                result = pd.read_sql(sql_query, conn)
-
-                if result.empty:
-                    st.warning("No data found for that query.")
-                else:
-                    st.markdown(
-                        f'<div class="result-meta">{len(result)} ROW{"S" if len(result) != 1 else ""} RETURNED</div>',
-                        unsafe_allow_html=True
-                    )
-                    st.dataframe(result, use_container_width=True, hide_index=True)
-
-                    if (
-                        len(result.columns) == 2
-                        and pd.api.types.is_numeric_dtype(result.iloc[:, 1])
-                        and len(result) > 1
-                    ):
-                        st.markdown("---")
-                        st.bar_chart(
-                            result.set_index(result.columns[0]),
-                            color="#00ff9d",
-                            use_container_width=True
-                        )
-
+                display_results(sql_query, source)
             except Exception as e:
-                st.error(f"SQL Error: {e}")
+                # If AI SQL fails at execution, retry with rule-based
+                if source == "ai":
+                    fallback = rule_based_sql(user_input)
+                    if fallback:
+                        try:
+                            display_results(fallback, "rule-based")
+                        except Exception as e2:
+                            st.error(f"SQL Error: {e2}")
+                    else:
+                        st.error(f"SQL Error: {e}")
+                else:
+                    st.error(f"SQL Error: {e}")
 
 # ── FOOTER ────────────────────────────────────────────────────
 st.markdown('<div class="footer">SMART DATA CHATBOT · BUILT BY SHANTANU SINGLA</div>', unsafe_allow_html=True)
