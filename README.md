@@ -1,6 +1,6 @@
 # 💬 Smart Data Chatbot (Natural Language → SQL)
 
-A Streamlit-based AI chatbot that converts plain English questions into SQL queries and returns results with visualizations — powered by a hybrid AI-first engine using Groq LLM with a rule-based fallback.
+A Streamlit-based AI chatbot that converts plain English questions into SQL queries and returns results with visualizations - powered by a hybrid AI-first engine using Groq LLM with a rule-based fallback.
 
 ---
 
